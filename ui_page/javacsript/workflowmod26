@@ -1,0 +1,285 @@
+// ServiceNow Global Search - Client Script
+// This script handles form submission and UI interactions
+
+(function() {
+   'use strict';
+
+   const searchInput = document.getElementById('searchInput');
+   const searchButton = document.getElementById('searchButton');
+   const clearButton = document.getElementById('clearButton');
+   const searchForm = document.getElementById('searchForm');
+   const messageEl = document.getElementById('message');
+   const responseContainer = document.getElementById('responseContainer');
+   const responseIndex = document.getElementById('responseIndex');
+
+   // Store all responses in memory
+   let responses = [];
+   let currentResponseIndex = -1;
+
+   /**
+    * Display a message to the user
+    * @param {string} text - Message text
+    * @param {string} type - 'error' or 'success'
+    */
+   function showMessage(text, type = 'error') {
+      messageEl.textContent = text;
+      messageEl.className = `message ${type}`;
+      
+      // Auto-hide message after 5 seconds
+      setTimeout(() => {
+         messageEl.className = 'message';
+      }, 5000);
+   }
+
+   /**
+    * Show or hide loading overlay
+    * @param {boolean} show - True to show, false to hide
+    */
+   function showLoadingOverlay(show) {
+      const overlay = document.getElementById('loadingOverlay');
+      if (show) {
+         overlay.classList.add('visible');
+      } else {
+         overlay.classList.remove('visible');
+      }
+   }
+
+   /**
+    * Validate search input
+    * @returns {boolean}
+    */
+   function validateSearch() {
+      const query = searchInput.value.trim();
+      
+      if (!query) {
+         showMessage('Please enter a question.', 'error');
+         searchInput.focus();
+         return false;
+      }
+
+      if (query.length < 2) {
+         showMessage('Question must be at least 2 characters.', 'error');
+         return false;
+      }
+
+      return true;
+   }
+
+   /**
+    * Escape HTML to prevent XSS
+    * @param {string} text - Text to escape
+    * @returns {string}
+    */
+   function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+   }
+
+   /**
+    * Render the response display panel
+    */
+   function renderResponsePanel() {
+      // Clear existing panel
+      let panel = document.getElementById('currentResponsePanel');
+      if (panel) {
+         panel.remove();
+      }
+
+      if (currentResponseIndex < 0 || currentResponseIndex >= responses.length) {
+         return;
+      }
+
+      const response = responses[currentResponseIndex];
+      
+      // Create panel
+      const resultPanel = document.createElement('div');
+      resultPanel.id = 'currentResponsePanel';
+      resultPanel.className = 'result-panel';
+
+      // Question section
+      const questionSection = document.createElement('div');
+      questionSection.className = 'result-section';
+      
+      const questionLabel = document.createElement('div');
+      questionLabel.className = 'result-section-label';
+      questionLabel.textContent = 'Question';
+      
+      const questionDiv = document.createElement('div');
+      questionDiv.className = 'result-question';
+      questionDiv.textContent = response.question;
+
+      questionSection.appendChild(questionLabel);
+      questionSection.appendChild(questionDiv);
+
+      // Answer section
+      const answerSection = document.createElement('div');
+      answerSection.className = 'result-section';
+      
+      const answerLabel = document.createElement('div');
+      answerLabel.className = 'result-section-label';
+      answerLabel.textContent = 'Answer';
+      
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'result-content';
+      contentDiv.innerHTML = escapeHtml(response.answer);
+
+      answerSection.appendChild(answerLabel);
+      answerSection.appendChild(contentDiv);
+
+      resultPanel.appendChild(questionSection);
+      resultPanel.appendChild(answerSection);
+
+      responseContainer.appendChild(resultPanel);
+   }
+
+   /**
+    * Update response index buttons
+    */
+   function updateResponseIndex() {
+      responseIndex.innerHTML = '';
+      
+      responses.forEach((response, index) => {
+         const button = document.createElement('button');
+         button.type = 'button';
+         button.className = 'index-button';
+         if (index === currentResponseIndex) {
+            button.classList.add('active');
+         }
+         button.textContent = `Q${index + 1}`;
+         button.addEventListener('click', (e) => {
+            e.preventDefault();
+            showResponse(index);
+         });
+         responseIndex.appendChild(button);
+      });
+   }
+
+   /**
+    * Show a specific response by index
+    */
+   function showResponse(index) {
+      if (index < 0 || index >= responses.length) {
+         return;
+      }
+
+      currentResponseIndex = index;
+      renderResponsePanel();
+      updateResponseIndex();
+
+      // Scroll to top of response panel
+      setTimeout(() => {
+         const panel = document.getElementById('currentResponsePanel');
+         if (panel) {
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+         }
+      }, 100);
+   }
+
+   /**
+    * Add new response to history
+    * @param {string} question - The question asked
+    * @param {string} answer - The answer from the server
+    */
+   function addResponse(question, answer) {
+      responses.push({
+         question: question,
+         answer: answer
+      });
+
+      const index = responses.length - 1;
+      
+      // Show this response
+      showResponse(index);
+   }
+
+   /**
+    * Handle search form submission
+    */
+   function handleSearch(e) {
+      e.preventDefault();
+
+      if (!validateSearch()) {
+         return;
+      }
+
+      const query = searchInput.value.trim();
+
+      // Add loading state to button and show overlay
+      searchButton.classList.add('loading');
+      searchButton.disabled = true;
+      showLoadingOverlay(true);
+
+      // Call script include via Glide AJAX
+      var ga = new GlideAjax('Workflowmod26');
+      ga.addParam('sysparm_name', 'callGroq');
+      ga.addParam('p_prompt', query);
+      ga.getXMLAnswer(function(answer) {
+         searchButton.classList.remove('loading');
+         searchButton.disabled = false;
+         showLoadingOverlay(false);
+
+         if (answer && answer.trim()) {
+            addResponse(query, answer);
+            showMessage('Response received!', 'success');
+         } else {
+            showMessage('No response from server.', 'error');
+         }
+      });
+   }
+
+   /**
+    * Auto-resize textarea as user types
+    */
+   function handleTextareaInput() {
+      searchInput.style.height = 'auto';
+      const scrollHeight = searchInput.scrollHeight;
+      const maxHeight = 120;
+      searchInput.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+   }
+
+   /**
+    * Clear search input
+    */
+   function handleClear() {
+      searchInput.value = '';
+      searchInput.style.height = 'auto';
+      messageEl.className = 'message';
+      searchInput.focus();
+   }
+
+   /**
+    * Handle Enter key (Shift+Enter for newline, Enter to submit)
+    */
+   function handleKeypress(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+         e.preventDefault();
+         handleSearch(e);
+      }
+   }
+
+   /**
+    * Initialize event listeners
+    */
+   function init() {
+      if (!searchForm) {
+         console.error('Search form not found');
+         return;
+      }
+
+      searchForm.addEventListener('submit', handleSearch);
+      clearButton.addEventListener('click', handleClear);
+      searchInput.addEventListener('keypress', handleKeypress);
+      searchInput.addEventListener('input', handleTextareaInput);
+
+      // Focus search input on page load
+      searchInput.focus();
+   }
+
+   // Initialize when DOM is ready
+   if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+   } else {
+      init();
+   }
+})();
