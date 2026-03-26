@@ -1,0 +1,61 @@
+// ServiceNow Global Search - Script Include
+var Workflowmod26 = Class.create();
+Workflowmod26.prototype = Object.extendsObject(AbstractAjaxProcessor, {
+
+	// function called by ui page to perform ai inference on a prompt
+	
+	/**
+	 * AJAX method wrapper - called by GlideAjax from client
+	 * @method callGroq
+	 * @returns void (uses getXMLAnswer callback)
+	 */
+	callGroq: function() {
+		var prompt = this.getParameter('p_prompt');
+		var result = this._performGroqInference(prompt);
+		return result;
+	},
+
+	/**
+	 * call the integration hub subflow to transfer a prompt to groq AI
+	 * engine for inference
+	 * @method _performGroqInference
+	 * @param <string> p_prompt
+	 * @returns <string>
+	 */
+	_performGroqInference: function(p_prompt) {
+		var response_text = '';
+		var error_message = '';
+		
+		try {
+			var inputs = {};
+			inputs['prompt'] = p_prompt; // String 
+			inputs['model_id'] = ''; // String -- this will be null for now - future feature
+
+			// Start Asynchronously: Uncomment to run in background. Code snippet will not have access to outputs.
+			// sn_fd.FlowAPI.getRunner().subflow('global.groq__inference_request').inBackground().withInputs(inputs).run();
+					
+			// Execute Synchronously: Run in foreground. Code snippet has access to outputs.
+			var result = sn_fd.FlowAPI.getRunner().subflow('global.groq__inference_request').inForeground().withInputs(inputs).run();
+			var outputs = result.getOutputs();
+
+			// Get Outputs:
+			// Note: outputs can only be retrieved when executing synchronously.
+			response_text = outputs['response_text']; // String
+			error_message = outputs['error_message']; // String
+		
+		} catch (ex) {
+			var message = ex.getMessage();
+			gs.error(message);
+		}
+		
+		if (!gs.nil(response_text)) {
+			return response_text;
+		} else if (!gs.nil(error_message)) {
+			return error_message;	
+		} else {
+			return gs.getMessage('unknown error occurred');
+		}
+	},
+
+	type: 'Workflowmod26'
+});
